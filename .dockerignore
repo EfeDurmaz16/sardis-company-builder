@@ -1,0 +1,8 @@
+.git
+__pycache__
+*.pyc
+report.json
+report.html
+.venv
+venv
+*.md
