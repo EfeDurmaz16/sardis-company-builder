@@ -163,15 +163,32 @@ class CompanyBuilder:
             self._record_skip(step_num, step.name, step.service_id, "Service not found in directory")
             return
 
+        # Validate endpoint path — must start with /
+        endpoint = step.endpoint_path
+        if not endpoint or not endpoint.startswith("/"):
+            # Try to find a matching endpoint from the service metadata
+            if svc.endpoints:
+                # Pick first POST endpoint or first endpoint
+                for ep in svc.endpoints:
+                    if ep.get("method", "").upper() == step.method.upper():
+                        endpoint = ep.get("path", "")
+                        break
+                if not endpoint:
+                    endpoint = svc.endpoints[0].get("path", "")
+            if not endpoint or not endpoint.startswith("/"):
+                self._record_skip(step_num, step.name, step.service_id, f"Invalid endpoint: {endpoint}")
+                return
+            logger.info("  Fixed endpoint: %s → %s", step.endpoint_path, endpoint)
+
         # Special handling for StableUpload (2-step upload)
-        if step.service_id == "stableupload" and step.endpoint_path == "/api/upload":
+        if step.service_id == "stableupload" and "/upload" in endpoint:
             self._execute_upload_step(step_num, step, svc)
             return
 
         # Execute the call
         result = self.caller.call(
             service_url=svc.service_url,
-            endpoint_path=step.endpoint_path,
+            endpoint_path=endpoint,
             method=step.method,
             data=step.data,
             service_id=step.service_id,
