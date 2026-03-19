@@ -139,20 +139,31 @@ For each step, specify:
 - cost_estimate: estimated cost in USD
 - phase: research, validation, or creation
 
-IMPORTANT:
+CRITICAL RULES:
 - Use ONLY services from the list above. Do not invent services.
-- For Reddit research, use stableenrich with endpoint /api/reddit/search
-- For news, use stableenrich with endpoint /api/serper/news
-- For web scraping, use browserbase with /search or /fetch
-- For AI search, use perplexity with /perplexity/search
-- For competitor search, use stableenrich with /api/exa/search
-- For image generation, use fal with /fal-ai/flux/schnell
-- For email, use stableemail with /api/send (to field must be an array)
-- For domain research, use hunter with /hunter/domain-search
-- For website hosting, use stableupload with /api/upload (then PUT content)
-- For carbon offset, use stripe-climate with /api/contribute
-- For blockchain data, use allium with /api/v1/developer/prices (body must be array)
-- For SEO/keyword research, use spyfu
+- ALWAYS include the full endpoint_path starting with /
+- Keep total plan cost under $1.00
+- Do NOT use anthropic for content generation steps — only use it for AI validation. Use other services for research and creation.
+- Maximum 8 steps total.
+
+EXACT REQUEST FORMATS (you MUST use these exact formats):
+
+perplexity /perplexity/search: {{"query": "your search query"}}
+stableenrich /api/exa/search: {{"query": "search query", "num_results": 5}}
+stableenrich /api/reddit/search: {{"query": "search query"}}
+stableenrich /api/serper/news: {{"query": "news search query"}}
+stableenrich /api/firecrawl/scrape: {{"url": "https://example.com"}}
+browserbase /search: {{"query": "search query"}}
+browserbase /fetch: {{"url": "https://example.com"}}
+fal /fal-ai/flux/schnell: {{"prompt": "image description", "image_size": "square_hd", "num_images": 1}}
+stableemail /api/send: {{"to": ["email@example.com"], "subject": "Subject", "text": "Body"}}
+hunter /hunter/domain-search: {{"domain": "example.com", "limit": 5}}
+stableupload /api/upload: {{"filename": "index.html", "contentType": "text/html", "tier": "10mb"}}
+stripe-climate /api/contribute: {{"amount": 1}}
+allium /api/v1/developer/prices: [{{"token_address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "chain": "ethereum"}}]
+spyfu — GET endpoints, use for SEO/keyword research
+modal /sandbox/create: create code execution sandboxes
+browser-use /api/browser-use-mpp/run-task: {{"task": "description of browser task"}}
 
 Also suggest:
 - company_name: a short, memorable name for this company
