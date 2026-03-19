@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.env
+.tempo/
+*.egg-info/
+dist/
+build/
+report.json
+report.html
+.venv/
+venv/
