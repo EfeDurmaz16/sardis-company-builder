@@ -99,7 +99,7 @@ async def info():
             "wallet": WALLET_ADDRESS,
         },
         "how_to_use": {
-            "cli": f'tempo request -X POST --json \'{{"description": "your company idea"}}\' https://YOUR_URL/build',
+            "cli": f'tempo request -X POST --json \'{{"description": "your company idea"}}\' https://sardis-company-builder-482463483786.us-central1.run.app/build',
             "skill": "Install the sardis-company-builder tempo skill",
         },
         "endpoints": {

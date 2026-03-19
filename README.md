@@ -2,6 +2,15 @@
 
 **An autonomous AI agent that starts companies using real MPP micropayments.**
 
+> **Live API:** https://sardis-company-builder-482463483786.us-central1.run.app
+>
+> **Try it now:**
+> ```bash
+> curl -X POST https://sardis-company-builder-482463483786.us-central1.run.app/build/free \
+>   -H 'Content-Type: application/json' \
+>   -d '{"description": "AI-powered fitness coaching platform"}'
+> ```
+
 Give it an idea. It discovers services, creates a plan, researches the market, validates the idea, generates branding, deploys infrastructure, and produces technical specs — all autonomously, all paid via micropayments on the Tempo blockchain.
 
 Built for the [Tempo MPP Hackathon](https://tempo.xyz) (March 2026).
