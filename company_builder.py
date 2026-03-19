@@ -357,27 +357,44 @@ class CompanyBuilder:
             self._record_skip(step_num, "Website Deploy", "stableupload", "Service not found")
             return
 
-        # Generate a simple HTML landing page
-        name = self.company_name or "New Startup"
-        html = self._generate_landing_page(name)
-
-        # Upload as a file
-        import base64
-        html_b64 = base64.b64encode(html.encode()).decode()
-
-        result = self.caller.call(
+        # Step 1: Get upload slot
+        slot_result = self.caller.call(
             service_url=svc.service_url, endpoint_path="/api/upload",
             method="POST",
-            data={
-                "filename": "index.html",
-                "content": html_b64,
-                "contentType": "text/html",
-                "tier": "10mb",
-            },
+            data={"filename": "index.html", "contentType": "text/html", "tier": "10mb"},
             service_id="stableupload", cost_estimate=0.02,
         )
 
-        self._record_result(step_num, "Website Deploy", "stableupload", "engineer", result)
+        if not slot_result.success or not isinstance(slot_result.data, dict):
+            self._record_result(step_num, "Website Deploy", "stableupload", "engineer", slot_result)
+            return
+
+        upload_url = slot_result.data.get("uploadUrl", "")
+        public_url = slot_result.data.get("publicUrl", "")
+
+        if not upload_url:
+            self._record_result(step_num, "Website Deploy", "stableupload", "engineer", slot_result)
+            return
+
+        # Step 2: PUT the HTML content to the upload URL
+        name = self.company_name or "New Startup"
+        html = self._generate_landing_page(name)
+
+        import subprocess as sp
+        try:
+            put_result = sp.run(
+                ["curl", "-s", "-X", "PUT", upload_url,
+                 "-H", "Content-Type: text/html",
+                 "--data-binary", html],
+                capture_output=True, text=True, timeout=30,
+            )
+            logger.info("Upload PUT: status=%d, body=%s", put_result.returncode, put_result.stdout[:200])
+        except Exception as e:
+            logger.error("Upload PUT failed: %s", e)
+
+        # Record with public URL
+        slot_result.data["public_url"] = public_url
+        self._record_result(step_num, "Website Deploy", "stableupload", "engineer", slot_result)
 
     # ------------------------------------------------------------------
     # Step 10: Carbon offset (Stripe Climate)
@@ -414,7 +431,9 @@ class CompanyBuilder:
         result = self.caller.call(
             service_url=svc.service_url, endpoint_path="/api/v1/developer/prices",
             method="POST",
-            data=[{"symbol": "USDC"}, {"symbol": "ETH"}],
+            data=[
+                {"token_address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "chain": "ethereum"},
+            ],
             service_id="allium", cost_estimate=0.01,
         )
 
