@@ -336,7 +336,7 @@ class CompanyBuilder:
             service_url=svc.service_url, endpoint_path="/api/send",
             method="POST",
             data={
-                "to": "contact@aspendos.net",
+                "to": ["contact@aspendos.net"],
                 "subject": subject,
                 "text": body,
             },
@@ -371,8 +371,8 @@ class CompanyBuilder:
             data={
                 "filename": "index.html",
                 "content": html_b64,
-                "content_type": "text/html",
-                "size_tier": "10MB",
+                "contentType": "text/html",
+                "tier": "10mb",
             },
             service_id="stableupload", cost_estimate=0.02,
         )
@@ -414,7 +414,7 @@ class CompanyBuilder:
         result = self.caller.call(
             service_url=svc.service_url, endpoint_path="/api/v1/developer/prices",
             method="POST",
-            data={"tokens": [{"symbol": "USDC"}, {"symbol": "ETH"}]},
+            data=[{"symbol": "USDC"}, {"symbol": "ETH"}],
             service_id="allium", cost_estimate=0.01,
         )
 
