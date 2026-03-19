@@ -79,7 +79,7 @@ class Agent:
                 raise RuntimeError("Anthropic service not found in MPP directory")
         return self._anthropic_url
 
-    def _call_claude(self, prompt: str, system: str = SYSTEM_PROMPT) -> str:
+    def _call_claude(self, prompt: str, system: str = SYSTEM_PROMPT, max_tokens: int = 2048) -> str:
         """Call Claude via Anthropic MPP and return text response."""
         url = self._get_anthropic_url()
 
@@ -89,7 +89,7 @@ class Agent:
             method="POST",
             data={
                 "model": "claude-sonnet-4-20250514",
-                "max_tokens": 2048,
+                "max_tokens": max_tokens,
                 "system": system,
                 "messages": [{"role": "user", "content": prompt}],
             },
@@ -256,9 +256,10 @@ Generate a technical specification document that a coding agent (like Claude Cod
 6. **Deployment plan** — how to deploy (should use MPP services where possible)
 7. **Next steps** — prioritized list of what the coding agent should do first
 
-Be specific and actionable. This should be copy-pasteable into a coding agent prompt."""
+Be specific and actionable. This should be copy-pasteable into a coding agent prompt.
+Complete the entire document — do not cut off or abbreviate any section."""
 
-        return self._call_claude(prompt)
+        return self._call_claude(prompt, max_tokens=4096)
 
     def _build_service_catalog(self, services: list[DiscoveredService]) -> str:
         """Build a concise service catalog string for Claude."""
