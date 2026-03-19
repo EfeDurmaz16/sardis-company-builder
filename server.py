@@ -209,6 +209,21 @@ async def build_company_html(request: Request):
     return HTMLResponse(content=report.to_html())
 
 
+@app.post("/generate-idea")
+async def generate_and_build(request: Request):
+    """Generate a startup idea with AI, then build the company.
+
+    No input needed — Claude generates the idea autonomously.
+    """
+    from company_builder import generate_idea, CompanyBuilder
+
+    idea = generate_idea()
+    builder = CompanyBuilder(company_description=idea, budget=2.0)
+    report = builder.build()
+
+    return JSONResponse(content=report.to_json())
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8080)

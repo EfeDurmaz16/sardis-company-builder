@@ -166,19 +166,11 @@ class CompanyBuilder:
         # Validate endpoint path — must start with /
         endpoint = step.endpoint_path
         if not endpoint or not endpoint.startswith("/"):
-            # Try to find a matching endpoint from the service metadata
-            if svc.endpoints:
-                # Pick first POST endpoint or first endpoint
-                for ep in svc.endpoints:
-                    if ep.get("method", "").upper() == step.method.upper():
-                        endpoint = ep.get("path", "")
-                        break
-                if not endpoint:
-                    endpoint = svc.endpoints[0].get("path", "")
-            if not endpoint or not endpoint.startswith("/"):
-                self._record_skip(step_num, step.name, step.service_id, f"Invalid endpoint: {endpoint}")
+            endpoint = self._resolve_endpoint(svc, step)
+            if not endpoint:
+                self._record_skip(step_num, step.name, step.service_id, f"No valid endpoint found")
                 return
-            logger.info("  Fixed endpoint: %s → %s", step.endpoint_path, endpoint)
+            logger.info("  Resolved endpoint: %s → %s", step.endpoint_path, endpoint)
 
         # Special handling for StableUpload (2-step upload)
         if step.service_id == "stableupload" and "/upload" in endpoint:
@@ -319,6 +311,49 @@ class CompanyBuilder:
         ))
 
     @staticmethod
+    def _resolve_endpoint(svc, step) -> str:
+        """Resolve the correct endpoint path from service metadata."""
+        # Known service → endpoint mappings (most reliable)
+        KNOWN = {
+            "perplexity": "/perplexity/search",
+            "stableenrich": "/api/exa/search",
+            "browserbase": "/search",
+            "fal": "/fal-ai/flux/schnell",
+            "stableemail": "/api/send",
+            "stableupload": "/api/upload",
+            "stripe-climate": "/api/contribute",
+            "hunter": "/hunter/domain-search",
+            "agentmail": "/v0/inboxes",
+            "anthropic": "/v1/messages",
+            "openai": "/v1/chat/completions",
+        }
+
+        # Check known mappings first
+        if step.service_id in KNOWN:
+            # But if the step has a partial path hint, try to match
+            if step.endpoint_path and svc.endpoints:
+                for ep in svc.endpoints:
+                    ep_path = ep.get("path", "")
+                    if step.endpoint_path.strip("/") in ep_path:
+                        return ep_path
+            return KNOWN[step.service_id]
+
+        # Fallback: match from service metadata
+        if not svc.endpoints:
+            return ""
+
+        # Prefer POST endpoints
+        for ep in svc.endpoints:
+            if ep.get("method", "").upper() == step.method.upper():
+                path = ep.get("path", "")
+                if path.startswith("/"):
+                    return path
+
+        # Any endpoint
+        path = svc.endpoints[0].get("path", "")
+        return path if path.startswith("/") else ""
+
+    @staticmethod
     def _summarize_data(data) -> str:
         if isinstance(data, dict):
             return json.dumps(data, default=str)[:300]
@@ -329,6 +364,53 @@ class CompanyBuilder:
         return ""
 
 
+def generate_idea() -> str:
+    """Use Claude to generate a startup idea, then build it."""
+    from discovery import ServiceDiscovery
+    from services import MPPCaller
+
+    disco = ServiceDiscovery()
+    caller = MPPCaller()
+
+    svc = disco.get_service("anthropic")
+    if not svc:
+        print("Error: Anthropic service not found")
+        return ""
+
+    print("\nGenerating startup idea via Claude...")
+    result = caller.call(
+        service_url=svc.service_url,
+        endpoint_path="/v1/messages",
+        method="POST",
+        data={
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 512,
+            "messages": [{"role": "user", "content":
+                "Generate ONE unique, specific startup idea that:\n"
+                "- Solves a real problem\n"
+                "- Can be built as a software product\n"
+                "- Has a clear revenue model\n"
+                "- Is relevant to the AI/crypto/fintech space in 2026\n\n"
+                "Respond with ONLY the idea description in 1-2 sentences. "
+                "No preamble, no explanation, just the idea."
+            }],
+        },
+        service_id="anthropic",
+        cost_estimate=0.01,
+    )
+
+    if result.success and isinstance(result.data, dict):
+        content = result.data.get("content", [])
+        if content and isinstance(content, list):
+            first = content[0]
+            idea = first.get("text", "") if isinstance(first, dict) else str(first)
+            print(f"\nGenerated idea: {idea}\n")
+            return idea.strip()
+
+    print("Failed to generate idea")
+    return "AI-powered micropayments platform for autonomous agents"
+
+
 def main():
     logging.basicConfig(
         level=logging.INFO,
@@ -336,11 +418,15 @@ def main():
         datefmt="%H:%M:%S",
     )
 
-    description = (
-        " ".join(sys.argv[1:])
-        if len(sys.argv) > 1
-        else "AI-powered micropayments platform for autonomous agents"
-    )
+    # Check for --generate-idea flag
+    args = sys.argv[1:]
+    if "--generate-idea" in args or "-g" in args:
+        args = [a for a in args if a not in ("--generate-idea", "-g")]
+        description = generate_idea()
+    elif args:
+        description = " ".join(args)
+    else:
+        description = "AI-powered micropayments platform for autonomous agents"
 
     builder = CompanyBuilder(description, budget=5.0)
     report = builder.build()
