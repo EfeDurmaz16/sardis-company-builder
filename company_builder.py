@@ -1,20 +1,10 @@
-"""Sardis Company Builder — AI agent that autonomously starts a company.
+"""Sardis Company Builder — Autonomous AI agent that starts companies.
 
-End-to-end pipeline: idea → research → validate → brand → comms → deploy.
-All via real MPP micropayments on Tempo, all services discovered dynamically.
+The agent discovers MPP services, uses Claude to plan which services to use,
+executes the plan, adapts based on results, and generates specs for coding agents.
 
-Steps:
-  1. Discover 54+ MPP services via tempo directory
-  2. Market research (Perplexity AI search)
-  3. Competitor analysis (Exa neural search)
-  4. Deep web research (Browserbase headless browser)
-  5. AI validation (Claude via Anthropic MPP — validates the business idea)
-  6. Logo generation (fal.ai FLUX)
-  7. Domain intelligence (Hunter — find emails & company info for the domain)
-  8. Email setup (StableEmail — send a launch announcement)
-  9. Website deployment (StableUpload — deploy a landing page)
-  10. Carbon offset (Stripe Climate)
-  11. Token price check (Allium blockchain data)
+No fixed pipeline — the AI decides what to do based on available services
+and the specific company idea.
 
 Usage:
     python company_builder.py "AI-powered micropayments platform"
@@ -29,471 +19,273 @@ import time
 
 from discovery import ServiceDiscovery
 from services import MPPCaller
+from agent import Agent, AgentPlan, AgentStep
 from report import CompanyReport, StepResult
 
 logger = logging.getLogger("company_builder")
 
 
 class CompanyBuilder:
-    """Orchestrates autonomous company creation via MPP services."""
+    """Autonomous company builder powered by AI agent + MPP services."""
 
     def __init__(self, company_description: str, budget: float = 5.0):
         self.company_description = company_description
         self.budget = budget
+        self.spent = 0.0
 
+        # Core components
         self.discovery = ServiceDiscovery()
         self.caller = MPPCaller()
+        self.agent = Agent(self.caller, self.discovery)
 
+        # State
         self.report = CompanyReport(company_description=company_description)
         self.step_counter = 0
+        self.completed_results: list[dict] = []
 
-        # Accumulated data from steps (used by later steps)
-        self.market_data: str = ""
-        self.competitor_data: str = ""
-        self.validation_result: str = ""
-        self.logo_url: str = ""
-        self.company_name: str = ""
+    @property
+    def budget_remaining(self) -> float:
+        return max(0, self.budget - self.spent)
 
     def build(self) -> CompanyReport:
-        """Execute the full company-building pipeline."""
+        """Execute the autonomous company-building pipeline."""
         logger.info("=" * 60)
-        logger.info("  SARDIS COMPANY BUILDER")
+        logger.info("  SARDIS COMPANY BUILDER (Autonomous Agent)")
         logger.info("  Goal: %s", self.company_description)
         logger.info("  Budget: $%.2f USDC", self.budget)
         logger.info("=" * 60)
 
         try:
-            self._step_discover_services()
-            self._step_market_research()
-            self._step_competitor_search()
-            self._step_web_scraping()
-            self._step_ai_validation()
-            self._step_logo_generation()
-            self._step_domain_intelligence()
-            self._step_email_launch()
-            self._step_deploy_website()
-            self._step_carbon_offset()
-            self._step_blockchain_check()
+            # Phase 0: Discover services
+            services = self._discover_services()
+
+            # Phase 1: AI creates the plan
+            plan = self._create_plan(services)
+
+            # Phase 2: Execute the plan with adaptive loop
+            self._execute_plan(plan)
+
+            # Phase 3: Generate specs for coding agents
+            self._generate_specs(plan)
+
         except Exception as e:
             logger.error("Pipeline error: %s", e, exc_info=True)
 
-        self.report.company_name = self.company_name or self.company_description.split(".")[0][:40]
         self.report.finalize()
         return self.report
 
-    def _next_step(self) -> int:
-        self.step_counter += 1
-        return self.step_counter
-
-    # ------------------------------------------------------------------
-    # Step 1: Discover services
-    # ------------------------------------------------------------------
-    def _step_discover_services(self):
+    def _discover_services(self) -> list:
+        """Discover available MPP services."""
         step_num = self._next_step()
         logger.info("Step %d: Discovering MPP services...", step_num)
 
         services = self.discovery.discover_all()
         self.report.discovered_services = len(services)
 
-        service_ids = [s.id for s in services]
-        summary = f"Discovered {len(services)} services: {', '.join(service_ids[:12])}..."
-
+        ids = [s.id for s in services]
         self.report.add_step(StepResult(
             step_number=step_num, step_name="Service Discovery",
             service_id="tempo-directory", agent_id="orchestrator",
-            success=len(services) > 0, data_summary=summary,
-            cost=0.0, latency_ms=0, raw_data=service_ids,
+            success=len(services) > 0,
+            data_summary=f"Discovered {len(services)} services: {', '.join(ids[:12])}...",
+            cost=0.0, latency_ms=0, raw_data=ids,
         ))
 
-    # ------------------------------------------------------------------
-    # Step 2: Market research (Perplexity)
-    # ------------------------------------------------------------------
-    def _step_market_research(self):
-        step_num = self._next_step()
-        logger.info("Step %d: Market research via Perplexity...", step_num)
+        return services
 
-        svc = self.discovery.get_service("perplexity")
+    def _create_plan(self, services: list) -> AgentPlan:
+        """Ask the AI agent to create an execution plan."""
+        step_num = self._next_step()
+        logger.info("Step %d: AI agent creating plan...", step_num)
+
+        t0 = time.monotonic()
+        plan = self.agent.create_plan(self.company_description, services)
+        latency = (time.monotonic() - t0) * 1000
+
+        self.report.company_name = plan.company_name
+        cost = 0.01  # Claude call cost
+        self.spent += cost
+
+        plan_summary = (
+            f"Company: {plan.company_name} | "
+            f"Steps: {len(plan.steps)} | "
+            f"Phases: {', '.join(plan.phases)} | "
+            f"Est. cost: ${plan.total_estimated_cost:.2f}"
+        )
+
+        logger.info("Plan: %s", plan_summary)
+        for i, step in enumerate(plan.steps):
+            logger.info("  [%d] %s (%s) — %s", i + 1, step.name, step.service_id, step.reason[:60])
+
+        self.report.add_step(StepResult(
+            step_number=step_num, step_name="AI Planning",
+            service_id="anthropic", agent_id="planner",
+            success=len(plan.steps) > 0,
+            data_summary=plan_summary,
+            cost=cost, latency_ms=latency,
+            raw_data={"company_name": plan.company_name, "summary": plan.summary,
+                      "step_count": len(plan.steps), "phases": plan.phases},
+        ))
+
+        return plan
+
+    def _execute_plan(self, plan: AgentPlan):
+        """Execute the agent's plan, adapting after each phase."""
+        remaining_steps = list(plan.steps)
+        current_phase = ""
+
+        while remaining_steps and self.budget_remaining > 0.02:
+            step = remaining_steps.pop(0)
+
+            # Log phase transitions
+            if step.phase != current_phase:
+                current_phase = step.phase
+                logger.info("--- Phase: %s ---", current_phase.upper())
+
+            # Execute the step
+            self._execute_step(step)
+
+            # After completing a phase, ask agent if we should adapt
+            next_phase = remaining_steps[0].phase if remaining_steps else None
+            if next_phase and next_phase != current_phase:
+                adapted = self._maybe_adapt(remaining_steps)
+                if adapted is not None:
+                    remaining_steps = adapted
+
+    def _execute_step(self, step: AgentStep):
+        """Execute a single step from the plan."""
+        step_num = self._next_step()
+        logger.info("Step %d: %s via %s...", step_num, step.name, step.service_id)
+
+        # Discover the service URL
+        svc = self.discovery.get_service(step.service_id)
         if not svc:
-            self._record_skip(step_num, "Market Research", "perplexity", "Service not found")
+            self._record_skip(step_num, step.name, step.service_id, "Service not found in directory")
             return
 
-        query = (
-            f"Market size, TAM, key trends, and growth projections for: "
-            f"{self.company_description}. "
-            f"Include competitor landscape, market opportunities, and potential revenue models."
-        )
-
-        result = self.caller.call(
-            service_url=svc.service_url, endpoint_path="/perplexity/search",
-            method="POST", data={"query": query},
-            service_id="perplexity", cost_estimate=0.05,
-        )
-
-        if result.success and result.data:
-            self.market_data = json.dumps(result.data, default=str)[:2000]
-
-        self._record_result(step_num, "Market Research", "perplexity", "researcher", result)
-
-    # ------------------------------------------------------------------
-    # Step 3: Competitor search (Exa)
-    # ------------------------------------------------------------------
-    def _step_competitor_search(self):
-        step_num = self._next_step()
-        logger.info("Step %d: Competitor search via Exa...", step_num)
-
-        svc = self.discovery.get_service("stableenrich")
-        if not svc:
-            self._record_skip(step_num, "Competitor Search", "stableenrich", "Service not found")
+        # Special handling for StableUpload (2-step upload)
+        if step.service_id == "stableupload" and step.endpoint_path == "/api/upload":
+            self._execute_upload_step(step_num, step, svc)
             return
 
-        query = f"Companies and startups building {self.company_description}"
-
+        # Execute the call
         result = self.caller.call(
-            service_url=svc.service_url, endpoint_path="/api/exa/search",
-            method="POST", data={"query": query, "num_results": 5},
-            service_id="stableenrich", cost_estimate=0.01,
+            service_url=svc.service_url,
+            endpoint_path=step.endpoint_path,
+            method=step.method,
+            data=step.data,
+            service_id=step.service_id,
+            cost_estimate=step.cost_estimate,
         )
 
-        if result.success and result.data:
-            self.competitor_data = json.dumps(result.data, default=str)[:2000]
+        self.spent += result.cost
+        self._record_result(step_num, step.name, step.service_id, step.phase, result)
 
-        self._record_result(step_num, "Competitor Search", "stableenrich", "researcher", result)
+        # Store for adaptation
+        self.completed_results.append({
+            "step": step.name,
+            "service": step.service_id,
+            "phase": step.phase,
+            "success": result.success,
+            "summary": self._summarize_data(result.data) if result.success else result.error,
+        })
 
-    # ------------------------------------------------------------------
-    # Step 4: Web scraping (Browserbase)
-    # ------------------------------------------------------------------
-    def _step_web_scraping(self):
-        step_num = self._next_step()
-        logger.info("Step %d: Deep web research via Browserbase...", step_num)
-
-        svc = self.discovery.get_service("browserbase")
-        if not svc:
-            self._record_skip(step_num, "Web Research", "browserbase", "Service not found")
-            return
-
-        query = f"{self.company_description} market analysis 2026"
-
-        result = self.caller.call(
-            service_url=svc.service_url, endpoint_path="/search",
-            method="POST", data={"query": query},
-            service_id="browserbase", cost_estimate=0.01,
-        )
-
-        self._record_result(step_num, "Web Research", "browserbase", "researcher", result)
-
-    # ------------------------------------------------------------------
-    # Step 5: AI Validation (Claude via Anthropic MPP)
-    # ------------------------------------------------------------------
-    def _step_ai_validation(self):
-        step_num = self._next_step()
-        logger.info("Step %d: AI validation via Claude (Anthropic MPP)...", step_num)
-
-        svc = self.discovery.get_service("anthropic")
-        if not svc:
-            self._record_skip(step_num, "AI Validation", "anthropic", "Service not found")
-            return
-
-        # Build a validation prompt using research gathered so far
-        context = ""
-        if self.market_data:
-            context += f"\nMarket research data:\n{self.market_data[:800]}\n"
-        if self.competitor_data:
-            context += f"\nCompetitor data:\n{self.competitor_data[:800]}\n"
-
-        prompt = (
-            f"You are a startup advisor. Evaluate this business idea and provide:\n"
-            f"1. A suggested company name (short, memorable, tech-sounding)\n"
-            f"2. One-paragraph executive summary\n"
-            f"3. Key strengths (3 bullet points)\n"
-            f"4. Key risks (3 bullet points)\n"
-            f"5. Recommended next steps (3 bullet points)\n"
-            f"6. Overall viability score (1-10)\n\n"
-            f"Business idea: {self.company_description}\n"
-            f"{context}\n"
-            f"Be concise. Format as JSON with keys: company_name, summary, strengths, risks, next_steps, score."
-        )
-
-        result = self.caller.call(
-            service_url=svc.service_url, endpoint_path="/v1/messages",
-            method="POST",
-            data={
-                "model": "claude-sonnet-4-20250514",
-                "max_tokens": 1024,
-                "messages": [{"role": "user", "content": prompt}],
-            },
-            service_id="anthropic", cost_estimate=0.01,
-        )
-
-        if result.success and result.data:
-            # Extract company name from Claude's response
-            data = result.data
-            if isinstance(data, dict):
-                content = data.get("content", [])
-                if content and isinstance(content, list):
-                    text = content[0].get("text", "") if isinstance(content[0], dict) else str(content[0])
-                    self.validation_result = text[:2000]
-                    # Try to extract company name from JSON response
-                    try:
-                        # Find JSON in the text
-                        start = text.find("{")
-                        end = text.rfind("}") + 1
-                        if start >= 0 and end > start:
-                            parsed = json.loads(text[start:end])
-                            self.company_name = parsed.get("company_name", "")
-                    except (json.JSONDecodeError, KeyError):
-                        pass
-
-        self._record_result(step_num, "AI Validation", "anthropic", "advisor", result)
-
-    # ------------------------------------------------------------------
-    # Step 6: Logo generation (fal.ai FLUX)
-    # ------------------------------------------------------------------
-    def _step_logo_generation(self):
-        step_num = self._next_step()
-        logger.info("Step %d: Logo generation via fal.ai FLUX...", step_num)
-
-        svc = self.discovery.get_service("fal")
-        if not svc:
-            self._record_skip(step_num, "Logo Generation", "fal", "Service not found")
-            return
-
-        name = self.company_name or self.company_description.split(".")[0][:30]
-        prompt = (
-            f"Minimalist modern tech company logo for '{name}', "
-            f"clean vector style, gradient blue and purple colors, "
-            f"white background, professional, simple geometric shapes, "
-            f"no text, abstract mark only"
-        )
-
-        result = self.caller.call(
-            service_url=svc.service_url, endpoint_path="/fal-ai/flux/schnell",
-            method="POST",
-            data={"prompt": prompt, "image_size": "square_hd", "num_images": 1},
-            service_id="fal", cost_estimate=0.05,
-        )
-
-        # Extract logo URL
-        if result.success and isinstance(result.data, dict):
-            images = result.data.get("images", [])
-            if images:
-                self.logo_url = images[0].get("url", "")
-
-        self._record_result(step_num, "Logo Generation", "fal", "designer", result)
-
-    # ------------------------------------------------------------------
-    # Step 7: Domain intelligence (Hunter)
-    # ------------------------------------------------------------------
-    def _step_domain_intelligence(self):
-        step_num = self._next_step()
-        logger.info("Step %d: Domain intelligence via Hunter...", step_num)
-
-        svc = self.discovery.get_service("hunter")
-        if not svc:
-            # Fallback: try SpyFu for domain analytics
-            svc = self.discovery.get_service("spyfu")
-            if not svc:
-                self._record_skip(step_num, "Domain Intelligence", "hunter", "Service not found")
-                return
-
-        # Use Hunter to check domain info for a potential competitor
-        name = self.company_name or "sardis"
-        domain = f"{name.lower().replace(' ', '')}.com"
-
-        result = self.caller.call(
-            service_url=svc.service_url, endpoint_path="/hunter/domain-search",
-            method="POST",
-            data={"domain": domain, "limit": 5},
-            service_id="hunter", cost_estimate=0.01,
-        )
-
-        self._record_result(step_num, "Domain Intelligence", "hunter", "researcher", result)
-
-    # ------------------------------------------------------------------
-    # Step 8: Email — send launch announcement (StableEmail)
-    # ------------------------------------------------------------------
-    def _step_email_launch(self):
-        step_num = self._next_step()
-        logger.info("Step %d: Send launch email via StableEmail...", step_num)
-
-        svc = self.discovery.get_service("stableemail")
-        if not svc:
-            self._record_skip(step_num, "Launch Email", "stableemail", "Service not found")
-            return
-
-        name = self.company_name or "New Startup"
-        subject = f"{name} — We just launched!"
-        body = (
-            f"Hello!\n\n"
-            f"We're excited to announce the launch of {name}.\n\n"
-            f"{self.company_description}\n\n"
-            f"This company was built entirely by an AI agent using MPP micropayments "
-            f"on the Tempo blockchain. Every service — research, branding, email, "
-            f"hosting — was discovered and paid for autonomously.\n\n"
-            f"Built with Sardis Company Builder.\n"
-        )
-
-        result = self.caller.call(
-            service_url=svc.service_url, endpoint_path="/api/send",
-            method="POST",
-            data={
-                "to": ["contact@aspendos.net"],
-                "subject": subject,
-                "text": body,
-            },
-            service_id="stableemail", cost_estimate=0.02,
-        )
-
-        self._record_result(step_num, "Launch Email", "stableemail", "comms", result)
-
-    # ------------------------------------------------------------------
-    # Step 9: Deploy landing page (StableUpload)
-    # ------------------------------------------------------------------
-    def _step_deploy_website(self):
-        step_num = self._next_step()
-        logger.info("Step %d: Deploy landing page via StableUpload...", step_num)
-
-        svc = self.discovery.get_service("stableupload")
-        if not svc:
-            self._record_skip(step_num, "Website Deploy", "stableupload", "Service not found")
-            return
-
+    def _execute_upload_step(self, step_num: int, step: AgentStep, svc):
+        """Handle StableUpload's 2-step upload process."""
         # Step 1: Get upload slot
-        slot_result = self.caller.call(
+        slot_data = step.data or {"filename": "index.html", "contentType": "text/html", "tier": "10mb"}
+        result = self.caller.call(
             service_url=svc.service_url, endpoint_path="/api/upload",
-            method="POST",
-            data={"filename": "index.html", "contentType": "text/html", "tier": "10mb"},
-            service_id="stableupload", cost_estimate=0.02,
+            method="POST", data=slot_data,
+            service_id="stableupload", cost_estimate=step.cost_estimate,
         )
 
-        if not slot_result.success or not isinstance(slot_result.data, dict):
-            self._record_result(step_num, "Website Deploy", "stableupload", "engineer", slot_result)
+        if result.success and isinstance(result.data, dict):
+            upload_url = result.data.get("uploadUrl", "")
+            if upload_url:
+                # Step 2: PUT content
+                content = step.data.get("content", "<html><body>Coming soon</body></html>") if isinstance(step.data, dict) else ""
+                import subprocess
+                try:
+                    subprocess.run(
+                        ["curl", "-s", "-X", "PUT", upload_url,
+                         "-H", "Content-Type: text/html", "--data-binary", str(content)],
+                        capture_output=True, text=True, timeout=30,
+                    )
+                except Exception as e:
+                    logger.warning("Upload PUT failed: %s", e)
+
+        self.spent += result.cost
+        self._record_result(step_num, step.name, "stableupload", step.phase, result)
+
+    def _maybe_adapt(self, remaining_steps: list[AgentStep]) -> list[AgentStep] | None:
+        """Ask the agent if the plan should be adapted."""
+        if self.budget_remaining < 0.05:
+            return None  # Don't spend on adaptation if low budget
+
+        logger.info("Agent: evaluating progress and adapting...")
+        adapted = self.agent.evaluate_and_adapt(
+            company_description=self.company_description,
+            completed_steps=self.completed_results,
+            remaining_steps=remaining_steps,
+            budget_remaining=self.budget_remaining,
+        )
+
+        if adapted:
+            logger.info("Agent: plan adapted! New steps: %d", len(adapted))
+            self.spent += 0.01  # Claude call cost
+            return adapted
+
+        return None
+
+    def _generate_specs(self, plan: AgentPlan):
+        """Generate technical specs for coding agents."""
+        if self.budget_remaining < 0.02:
+            logger.info("Skipping spec generation (low budget)")
             return
 
-        upload_url = slot_result.data.get("uploadUrl", "")
-        public_url = slot_result.data.get("publicUrl", "")
-
-        if not upload_url:
-            self._record_result(step_num, "Website Deploy", "stableupload", "engineer", slot_result)
-            return
-
-        # Step 2: PUT the HTML content to the upload URL
-        name = self.company_name or "New Startup"
-        html = self._generate_landing_page(name)
-
-        import subprocess as sp
-        try:
-            put_result = sp.run(
-                ["curl", "-s", "-X", "PUT", upload_url,
-                 "-H", "Content-Type: text/html",
-                 "--data-binary", html],
-                capture_output=True, text=True, timeout=30,
-            )
-            logger.info("Upload PUT: status=%d, body=%s", put_result.returncode, put_result.stdout[:200])
-        except Exception as e:
-            logger.error("Upload PUT failed: %s", e)
-
-        # Record with public URL
-        slot_result.data["public_url"] = public_url
-        self._record_result(step_num, "Website Deploy", "stableupload", "engineer", slot_result)
-
-    # ------------------------------------------------------------------
-    # Step 10: Carbon offset (Stripe Climate)
-    # ------------------------------------------------------------------
-    def _step_carbon_offset(self):
         step_num = self._next_step()
-        logger.info("Step %d: Carbon offset via Stripe Climate...", step_num)
+        logger.info("Step %d: Generating specs for coding agents...", step_num)
 
-        svc = self.discovery.get_service("stripe-climate")
-        if not svc:
-            self._record_skip(step_num, "Carbon Offset", "stripe-climate", "Service not found")
-            return
-
-        result = self.caller.call(
-            service_url=svc.service_url, endpoint_path="/api/contribute",
-            method="POST", data={"amount": 1},
-            service_id="stripe-climate", cost_estimate=0.01,
+        t0 = time.monotonic()
+        specs = self.agent.generate_specs(
+            company_description=self.company_description,
+            company_name=plan.company_name or self.company_description[:30],
+            results=self.completed_results,
         )
+        latency = (time.monotonic() - t0) * 1000
 
-        self._record_result(step_num, "Carbon Offset", "stripe-climate", "finance", result)
+        cost = 0.01
+        self.spent += cost
 
-    # ------------------------------------------------------------------
-    # Step 11: Blockchain data (Allium)
-    # ------------------------------------------------------------------
-    def _step_blockchain_check(self):
-        step_num = self._next_step()
-        logger.info("Step %d: Token prices via Allium...", step_num)
+        self.report.add_step(StepResult(
+            step_number=step_num, step_name="Technical Specs (for coding agents)",
+            service_id="anthropic", agent_id="architect",
+            success=bool(specs),
+            data_summary=specs[:300] if specs else "No specs generated",
+            cost=cost, latency_ms=latency,
+            raw_data=specs,
+        ))
 
-        svc = self.discovery.get_service("allium")
-        if not svc:
-            self._record_skip(step_num, "Token Prices", "allium", "Service not found")
-            return
-
-        result = self.caller.call(
-            service_url=svc.service_url, endpoint_path="/api/v1/developer/prices",
-            method="POST",
-            data=[
-                {"token_address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "chain": "ethereum"},
-            ],
-            service_id="allium", cost_estimate=0.01,
-        )
-
-        self._record_result(step_num, "Token Prices", "allium", "finance", result)
+        # Save specs to file
+        if specs:
+            with open("SPECS.md", "w") as f:
+                f.write(f"# {plan.company_name or 'Company'} — Technical Specs\n\n")
+                f.write(f"*Generated by Sardis Company Builder*\n\n")
+                f.write(f"## Company Description\n{self.company_description}\n\n")
+                f.write(specs)
+            logger.info("Specs saved to SPECS.md — feed this to your coding agent!")
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
-    def _generate_landing_page(self, name: str) -> str:
-        """Generate a simple HTML landing page for the company."""
-        logo_html = f'<img src="{self.logo_url}" alt="{name} logo" style="width:120px;height:120px;border-radius:16px;margin-bottom:1rem;">' if self.logo_url else ""
-        validation_html = ""
-        if self.validation_result:
-            validation_html = f'<div style="background:#161b22;padding:1rem;border-radius:8px;margin:1rem 0;text-align:left;max-width:600px;"><pre style="white-space:pre-wrap;color:#c9d1d9;font-size:0.85rem;">{self.validation_result[:1000]}</pre></div>'
 
-        return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{name}</title>
-    <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #c9d1d9; margin: 0; padding: 2rem; text-align: center; }}
-        h1 {{ color: #58a6ff; font-size: 2.5rem; margin-top: 3rem; }}
-        p {{ max-width: 600px; margin: 1rem auto; line-height: 1.6; }}
-        .badge {{ display: inline-block; background: linear-gradient(135deg, #238636, #1f6feb); padding: 0.5rem 1.5rem; border-radius: 20px; color: white; font-weight: 600; margin: 1rem 0.5rem; font-size: 0.85rem; }}
-        .footer {{ margin-top: 3rem; color: #484f58; font-size: 0.8rem; }}
-        a {{ color: #58a6ff; }}
-    </style>
-</head>
-<body>
-    {logo_html}
-    <h1>{name}</h1>
-    <p>{self.company_description}</p>
-    <div>
-        <span class="badge">Built by AI Agent</span>
-        <span class="badge">MPP Micropayments</span>
-        <span class="badge">Tempo Blockchain</span>
-    </div>
-    {validation_html}
-    <div class="footer">
-        <p>This company was built entirely by an autonomous AI agent using
-        <a href="https://tempo.xyz">Tempo MPP</a> micropayments.</p>
-        <p>{self.report.discovered_services} services discovered | ~${self.report.total_cost:.4f} USDC spent</p>
-        <p>Built with <a href="https://github.com/EfeDurmaz16/sardis-company-builder">Sardis Company Builder</a></p>
-    </div>
-</body>
-</html>"""
+    def _next_step(self) -> int:
+        self.step_counter += 1
+        return self.step_counter
 
     def _record_result(self, step_num: int, step_name: str, service_id: str, agent_id: str, result):
-        """Record a service call result."""
-        data_summary = ""
-        if result.success and result.data:
-            if isinstance(result.data, dict):
-                data_summary = json.dumps(result.data, default=str)[:300]
-            elif isinstance(result.data, list):
-                data_summary = f"{len(result.data)} results"
-            else:
-                data_summary = str(result.data)[:300]
-
+        data_summary = self._summarize_data(result.data) if result.success else ""
         self.report.add_step(StepResult(
             step_number=step_num, step_name=step_name,
             service_id=service_id, agent_id=agent_id,
@@ -503,13 +295,21 @@ class CompanyBuilder:
         ))
 
     def _record_skip(self, step_num: int, step_name: str, service_id: str, reason: str):
-        """Record a skipped step."""
         self.report.add_step(StepResult(
             step_number=step_num, step_name=step_name,
             service_id=service_id, agent_id="orchestrator",
-            success=False, data_summary="", cost=0.0, latency_ms=0,
-            error=reason,
+            success=False, data_summary="", cost=0.0, latency_ms=0, error=reason,
         ))
+
+    @staticmethod
+    def _summarize_data(data) -> str:
+        if isinstance(data, dict):
+            return json.dumps(data, default=str)[:300]
+        elif isinstance(data, list):
+            return f"{len(data)} results"
+        elif data:
+            return str(data)[:300]
+        return ""
 
 
 def main():
@@ -537,6 +337,9 @@ def main():
         f.write(report.to_html())
 
     print(f"\nReports saved: report.json, report.html")
+    if report.steps and any(s.step_name == "Technical Specs (for coding agents)" for s in report.steps):
+        print("Technical specs saved: SPECS.md — feed this to your coding agent!")
+
     return report
 
 
